@@ -43,7 +43,7 @@ const safeSetupParentArgs = async (args, parent) => {
         gasPrice: parent.gasPrice,
         networkType: parent.networkType,
         networkId: networkId,
-        // logger: true
+        logger: true
       })
 }
 
