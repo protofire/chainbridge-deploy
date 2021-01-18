@@ -182,6 +182,7 @@ const queryResourceId = new Command("query-resource")
 
 const setupTokens = new Command('setup-tokens')
     .description("Setup multiple tokens to be bridged")
+    .option('--override', 'Skip checking tokens already registered')
     .action(async function(args) {
         const config = require('./setup-tokens-config')
         const eth_provider = new ethers.providers.JsonRpcProvider(config.CBG_URL);
@@ -201,99 +202,137 @@ const setupTokens = new Command('setup-tokens')
         const avaBridgedTokensAddresses = []
         const ethBridgedTokensAddresses = []
 
+        const ethBridgeInstance = new ethers.Contract(config.CBG_BRIDGE, constants.ContractABIs.Bridge.abi, eth_wallet);
+        const avaBridgeInstance = new ethers.Contract(config.CBK_BRIDGE, constants.ContractABIs.Bridge.abi, ava_wallet);
+
         console.log('Setting up bridged ethereum tokens')
         for (let index = 0; index < config.ETH_TOKENS.length; index++) {
             const eth_token = config.ETH_TOKENS[index]
             console.log(`--- Seting up Ethereum ${eth_token.symbol}`)
-            // 1. Deploy ERC20 in Avalanche
-            const factory = new ethers.ContractFactory(constants.ContractABIs.Erc20Mintable.abi, constants.ContractABIs.Erc20Mintable.bytecode, ava_wallet);
-            console.log(`------ Deploying ${eth_token.symbol} in Avalanche`)
-            const ava_token = await factory.deploy(eth_token.name, eth_token.symbol, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
-            await ava_token.deployed();
-
-            avaBridgedTokensAddresses.push({
-                ...eth_token,
-                address: ava_token.address
-            })
-
             const CBG_ERC20_RID = '0x0000000000000000000000' + eth_token.address.substring(2) + '0' + config.CBG_ID
+            console.log(`------ ResourceId ${CBG_ERC20_RID}`)
 
-            // 2. Register resource and handler on Ethereum
-            const ethBridgeInstance = new ethers.Contract(config.CBG_BRIDGE, constants.ContractABIs.Bridge.abi, eth_wallet);
-            const register_eth_reroudse_tx = await ethBridgeInstance.adminSetResource(config.CBG_ERC20HANDLER, CBG_ERC20_RID, eth_token.address, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
-            console.log(`------ Registering resource on Ethereum bridge for ${eth_token.symbol} with tx ${register_eth_reroudse_tx.hash}`)
-            await register_eth_reroudse_tx.wait()
-            // 3. Register resource ID on C-Ava
-            const avaBridgeInstance = new ethers.Contract(config.CBK_BRIDGE, constants.ContractABIs.Bridge.abi, ava_wallet);
-            const register_ava_reroudse_tx = await avaBridgeInstance.adminSetResource(config.CBK_ERC20HANDLER, CBG_ERC20_RID, ava_token.address, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
-            console.log(`------ Registering resource on Avalanche bridge for ${eth_token.symbol} with tx ${register_ava_reroudse_tx.hash}`)
-            await register_ava_reroudse_tx.wait()
+            const regEth = (await ethBridgeInstance._resourceIDToHandlerAddress(CBG_ERC20_RID)) !== ethers.constants.AddressZero
+            const regAva = (await avaBridgeInstance._resourceIDToHandlerAddress(CBG_ERC20_RID)) !== ethers.constants.AddressZero
 
-            // 4. Add the ERC20 handler as a minter on C-Ava
-            const avaErc20Instance = new ethers.Contract(ava_token.address, constants.ContractABIs.Erc20Mintable.abi, ava_wallet);
-            const MINTER_ROLE = await avaErc20Instance.MINTER_ROLE();
+            // We should process the token if not registered or orverride
+            if (!regEth || !regAva || args.override) {
+                // 1. Deploy ERC20 in Avalanche
+                const factory = new ethers.ContractFactory(constants.ContractABIs.Erc20Mintable.abi, constants.ContractABIs.Erc20Mintable.bytecode, ava_wallet);
+                console.log(`------ Deploying ${eth_token.symbol} in Avalanche`)
+                const ava_token = await factory.deploy(eth_token.name, eth_token.symbol, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
+                await ava_token.deployed();
+                console.log(`-------- ${eth_token.symbol} address in Avalanche: ${ava_token.address}`)
 
-            const addMinterTx = await avaErc20Instance.grantRole(MINTER_ROLE, config.CBK_ERC20HANDLER, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
-            console.log(`------ Adding CBK_ERC20HANDLER as minter for ${eth_token.symbol} on Avalanche with tx ${addMinterTx.hash}`)
-            await addMinterTx.wait()
+                avaBridgedTokensAddresses.push({
+                    ...eth_token,
+                    avaAddress: ava_token.address,
+                    ethAddress: eth_token.address,
+                    resourceId: CBG_ERC20_RID
+                })
 
-            //5. Enable mint/burn on C-Ava
-            const adminSetBurnableTx = await avaBridgeInstance.adminSetBurnable(config.CBK_ERC20HANDLER, ava_token.address, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
-            console.log(`------ Enable mint/burn on Avalanche for ${eth_token.symbol} with tx ${adminSetBurnableTx.hash}`)
-            await adminSetBurnableTx.wait()
+                // 2. Register resource and handler on Ethereum
+
+                const register_eth_reroudse_tx = await ethBridgeInstance.adminSetResource(config.CBG_ERC20HANDLER, CBG_ERC20_RID, eth_token.address, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
+                console.log(`------ Registering resource on Ethereum bridge for ${eth_token.symbol} with tx ${register_eth_reroudse_tx.hash}`)
+                await register_eth_reroudse_tx.wait()
+                // 3. Register resource ID on C-Ava
+
+                const register_ava_reroudse_tx = await avaBridgeInstance.adminSetResource(config.CBK_ERC20HANDLER, CBG_ERC20_RID, ava_token.address, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
+                console.log(`------ Registering resource on Avalanche bridge for ${eth_token.symbol} with tx ${register_ava_reroudse_tx.hash}`)
+                await register_ava_reroudse_tx.wait()
+
+                // 4. Add the ERC20 handler as a minter on C-Ava
+                const avaErc20Instance = new ethers.Contract(ava_token.address, constants.ContractABIs.Erc20Mintable.abi, ava_wallet);
+                const MINTER_ROLE = await avaErc20Instance.MINTER_ROLE();
+
+                const addMinterTx = await avaErc20Instance.grantRole(MINTER_ROLE, config.CBK_ERC20HANDLER, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
+                console.log(`------ Adding CBK_ERC20HANDLER as minter for ${eth_token.symbol} on Avalanche with tx ${addMinterTx.hash}`)
+                await addMinterTx.wait()
+
+                //5. Enable mint/burn on C-Ava
+                const adminSetBurnableTx = await avaBridgeInstance.adminSetBurnable(config.CBK_ERC20HANDLER, ava_token.address, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
+                console.log(`------ Enable mint/burn on Avalanche for ${eth_token.symbol} with tx ${adminSetBurnableTx.hash}`)
+                await adminSetBurnableTx.wait()
+            } else {
+                console.log(`------ Skipping ${config.ETH_TOKENS[index].symbol} already registered`)
+            }
+
+        }
+
+        if (avaBridgedTokensAddresses.length) {
+            console.log(`
+================================================================
+Bridged tokens Ethereum -> Avalanche:
+${avaBridgedTokensAddresses.map(token => `${token.symbol}: Ethereum ${token.ethAddress} -> Avalanche ${token.avaAddress} - ResourceId ${token.resourceId} \n`).join('')}
+================================================================
+            `)
+
         }
 
         console.log('Setting up bridged Avalanche tokens')
         for (let index = 0; index < config.AVA_TOKENS.length; index++) {
             const ava_token = config.AVA_TOKENS[index]
             console.log(`--- Seting up Avalanche ${ava_token.symbol}`)
-            // 1. Deploy ERC20 in Avalanche
-            const factory = new ethers.ContractFactory(constants.ContractABIs.Erc20Mintable.abi, constants.ContractABIs.Erc20Mintable.bytecode, eth_wallet);
-            console.log(`------ Deploying ERC20 in Ethereum for ${ava_token.symbol}`)
-            const eth_token = await factory.deploy(ava_token.name, ava_token.symbol, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
-            await eth_token.deployed();
-
-            ethBridgedTokensAddresses.push({
-                ...ava_token,
-                address: eth_token.address
-            })
-
             const CBK_ERC20_RID = '0x0000000000000000000000' + ava_token.address.substring(2) + '0' + config.CBK_ID
+            console.log(`------ ResourceId ${CBK_ERC20_RID}`)
 
-            // 2. Register resource and handler on Avalanche
-            const avaBridgeInstance = new ethers.Contract(config.CBK_BRIDGE, constants.ContractABIs.Bridge.abi, ava_wallet);
-            const register_ava_reroudse_tx = await avaBridgeInstance.adminSetResource(config.CBK_ERC20HANDLER, CBK_ERC20_RID, ava_token.address, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
-            console.log(`------ Registering resource on Avalanche bridge for ${ava_token.symbol} with tx ${register_ava_reroudse_tx.hash}`)
-            await register_ava_reroudse_tx.wait()
+            const regEth = (await ethBridgeInstance._resourceIDToHandlerAddress(CBK_ERC20_RID)) !== ethers.constants.AddressZero
+            const regAva = (await avaBridgeInstance._resourceIDToHandlerAddress(CBK_ERC20_RID)) !== ethers.constants.AddressZero
 
-            // 3. Register resource ID on Ethereum
-            const ethBridgeInstance = new ethers.Contract(config.CBG_BRIDGE, constants.ContractABIs.Bridge.abi, eth_wallet);
-            const register_eth_reroudse_tx = await ethBridgeInstance.adminSetResource(config.CBG_ERC20HANDLER, CBK_ERC20_RID, ava_token.address, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
-            console.log(`------ Registering resource on Ethereum bridge for ${ava_token.symbol} with tx ${register_eth_reroudse_tx.hash}`)
-            await register_eth_reroudse_tx.wait()
+            // We should process the token if not registered or orverride
+            if (!regEth || !regAva || args.override) {
+                // 1. Deploy ERC20 in Avalanche
+                const factory = new ethers.ContractFactory(constants.ContractABIs.Erc20Mintable.abi, constants.ContractABIs.Erc20Mintable.bytecode, eth_wallet);
+                console.log(`------ Deploying ERC20 in Ethereum for ${ava_token.symbol}`)
+                const eth_token = await factory.deploy(ava_token.name, ava_token.symbol, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
+                await eth_token.deployed();
+                console.log(`-------- ${ava_token.symbol} address in Ethereum: ${eth_token.address}`)
 
-            // 4. Add the ERC20 handler as a minter on Ethereum
-            const ethErc20Instance = new ethers.Contract(eth_token.address, constants.ContractABIs.Erc20Mintable.abi, eth_wallet);
-            const MINTER_ROLE = await ethErc20Instance.MINTER_ROLE();
+                ethBridgedTokensAddresses.push({
+                    ...ava_token,
+                    avaAddress: ava_token.address,
+                    ethAddress: eth_token.address,
+                    resourceId: CBK_ERC20_RID
+                })
 
-            const addMinterTx = await ethErc20Instance.grantRole(MINTER_ROLE, config.CBG_ERC20HANDLER, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
-            console.log(`------ Adding CBK_ERC20HANDLER as minter for ${ava_token.symbol} on Ethereum with tx ${addMinterTx.hash}`)
-            await addMinterTx.wait()
+                // 2. Register resource and handler on Avalanche
+                const register_ava_reroudse_tx = await avaBridgeInstance.adminSetResource(config.CBK_ERC20HANDLER, CBK_ERC20_RID, ava_token.address, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
+                console.log(`------ Registering resource on Avalanche bridge for ${ava_token.symbol} with tx ${register_ava_reroudse_tx.hash}`)
+                await register_ava_reroudse_tx.wait()
 
-            //5. Enable mint/burn on Ethereum
-            const adminSetBurnableTx = await ethBridgeInstance.adminSetBurnable(config.CBG_ERC20HANDLER, ava_token.address, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
-            console.log(`------ Enable mint/burn on Ethereum for ${ava_token.symbol} with tx ${adminSetBurnableTx.hash}`)
-            await adminSetBurnableTx.wait()
+                // 3. Register resource ID on Ethereum
+                const register_eth_reroudse_tx = await ethBridgeInstance.adminSetResource(config.CBG_ERC20HANDLER, CBK_ERC20_RID, ava_token.address, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
+                console.log(`------ Registering resource on Ethereum bridge for ${ava_token.symbol} with tx ${register_eth_reroudse_tx.hash}`)
+                await register_eth_reroudse_tx.wait()
+
+                // 4. Add the ERC20 handler as a minter on Ethereum
+                const ethErc20Instance = new ethers.Contract(eth_token.address, constants.ContractABIs.Erc20Mintable.abi, eth_wallet);
+                const MINTER_ROLE = await ethErc20Instance.MINTER_ROLE();
+
+                const addMinterTx = await ethErc20Instance.grantRole(MINTER_ROLE, config.CBG_ERC20HANDLER, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
+                console.log(`------ Adding CBK_ERC20HANDLER as minter for ${ava_token.symbol} on Ethereum with tx ${addMinterTx.hash}`)
+                await addMinterTx.wait()
+
+                //5. Enable mint/burn on Ethereum
+                const adminSetBurnableTx = await ethBridgeInstance.adminSetBurnable(config.CBG_ERC20HANDLER, ava_token.address, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
+                console.log(`------ Enable mint/burn on Ethereum for ${ava_token.symbol} with tx ${adminSetBurnableTx.hash}`)
+                await adminSetBurnableTx.wait()
+            } else {
+                console.log(`------ Skipping ${config.AVA_TOKENS[index].symbol} already registered`)
+            }
         }
 
-        console.log(`
-================================================================
-Bridged tokens Ethereum -> Avalanche:
-${avaBridgedTokensAddresses.map(token => `${token.symbol}: ${token.address} \n`).join('')}
+        if (ethBridgedTokensAddresses.length) {
+            console.log(`
 ================================================================
 Bridged tokens Avalanche -> Ethereum:
-${ethBridgedTokensAddresses.map(token => `${token.symbol}: ${token.address} \n`).join('')}
-        `)
+${ethBridgedTokensAddresses.map(token => `${token.symbol}: Avalanche ${token.avaAddress} -> Ethereum ${token.ethAddress} - ResourceId ${token.resourceId} \n`).join('')}
+================================================================
+            `)
+
+        }
+
     })
 
 const bridgeCmd = new Command("bridge")
