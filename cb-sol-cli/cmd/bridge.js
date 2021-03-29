@@ -182,6 +182,7 @@ const queryResourceId = new Command("query-resource")
 
 const setupTokens = new Command('setup-tokens')
     .description("Setup multiple tokens to be bridged")
+    .requiredOption('--multiSig <value>', 'Address of Multi-sig')
     .option('--override', 'Skip checking tokens already registered')
     .action(async function(args) {
         const config = require('./setup-tokens-config')
@@ -254,6 +255,31 @@ const setupTokens = new Command('setup-tokens')
                 const adminSetBurnableTx = await avaBridgeInstance.adminSetBurnable(config.CBK_ERC20HANDLER, ava_token.address, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
                 console.log(`------ Enable mint/burn on Avalanche for ${eth_token.symbol} with tx ${adminSetBurnableTx.hash}`)
                 await adminSetBurnableTx.wait()
+
+                // Set multisig as token admin, revoke deployer mint and burn roles and renounce admin role
+                const PAUSER_ROLE = await avaErc20Instance.PAUSER_ROLE();
+                const DEFAULT_ADMIN_ROLE = await avaErc20Instance.PAUSER_ROLE();
+
+                const grantAdminTx = await avaErc20Instance.grantRole(DEFAULT_ADMIN_ROLE, args.multiSig);
+                console.log(`------ Granting multisig as Admin for ${eth_token.symbol} on Avalanche with tx ${grantAdminTx.hash}`)
+                await grantAdminTx.wait()
+
+                const revokeMinterTx = await avaErc20Instance.revokeRole(MINTER_ROLE, ava_wallet.address);
+                console.log(`------ Revoke deployer as MINTER for ${eth_token.symbol} on Avalanche with tx ${revokeMinterTx.hash}`)
+                await revokeMinterTx.wait()
+
+                const revokePauserTx = await avaErc20Instance.revokeRole(PAUSER_ROLE, ava_wallet.address);
+                console.log(`------ Revoke deployer as PAUSER for ${eth_token.symbol} on Avalanche with tx ${revokePauserTx.hash}`)
+                await revokePauserTx.wait()
+
+                const grantPauserTx = await avaErc20Instance.grantRole(PAUSER_ROLE, args.multiSig);
+                console.log(`------ Granting multisig as PAUSER for ${eth_token.symbol} on Avalanche with tx ${grantPauserTx.hash}`)
+                await grantPauserTx.wait()
+
+                const renounceAdmin = await avaErc20Instance.renounceRole(DEFAULT_ADMIN_ROLE, ava_wallet.address);
+                console.log(`------ Renounce deployer as ADMIN for ${eth_token.symbol} on Avalanche with tx ${renounceAdmin.hash}`)
+                await renounceAdmin.wait()
+
             } else {
                 console.log(`------ Skipping ${config.ETH_TOKENS[index].symbol} already registered`)
             }
@@ -267,7 +293,6 @@ Bridged tokens Ethereum -> Avalanche:
 ${avaBridgedTokensAddresses.map(token => `${token.symbol}: Ethereum ${token.ethAddress} -> Avalanche ${token.avaAddress} - ResourceId ${token.resourceId} \n`).join('')}
 ================================================================
             `)
-
         }
 
         console.log('Setting up bridged Avalanche tokens')
@@ -318,6 +343,30 @@ ${avaBridgedTokensAddresses.map(token => `${token.symbol}: Ethereum ${token.ethA
                 const adminSetBurnableTx = await ethBridgeInstance.adminSetBurnable(config.CBG_ERC20HANDLER, ava_token.address, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
                 console.log(`------ Enable mint/burn on Ethereum for ${ava_token.symbol} with tx ${adminSetBurnableTx.hash}`)
                 await adminSetBurnableTx.wait()
+
+                // Set multisig as token admin, revoke deployer mint and burn roles and renounce admin role
+                const PAUSER_ROLE = await ethErc20Instance.PAUSER_ROLE();
+                const DEFAULT_ADMIN_ROLE = await ethErc20Instance.PAUSER_ROLE();
+
+                const grantAdminTx = await ethErc20Instance.grantRole(DEFAULT_ADMIN_ROLE, args.multiSig);
+                console.log(`------ Granting multisig as Admin for ${eth_token.symbol} on Avalanche with tx ${grantAdminTx.hash}`)
+                await grantAdminTx.wait()
+
+                const revokeMinterTx = await ethErc20Instance.revokeRole(MINTER_ROLE, ava_wallet.address);
+                console.log(`------ Revoke deployer as MINTER for ${eth_token.symbol} on Avalanche with tx ${revokeMinterTx.hash}`)
+                await revokeMinterTx.wait()
+
+                const revokePauserTx = await ethErc20Instance.revokeRole(PAUSER_ROLE, ava_wallet.address);
+                console.log(`------ Revoke deployer as PAUSER for ${eth_token.symbol} on Avalanche with tx ${revokePauserTx.hash}`)
+                await revokePauserTx.wait()
+
+                const grantPauserTx = await ethErc20Instance.grantRole(PAUSER_ROLE, args.multiSig);
+                console.log(`------ Granting multisig as PAUSER for ${eth_token.symbol} on Avalanche with tx ${grantPauserTx.hash}`)
+                await grantPauserTx.wait()
+
+                const renounceAdmin = await ethErc20Instance.renounceRole(DEFAULT_ADMIN_ROLE, ava_wallet.address);
+                console.log(`------ Renounce deployer as ADMIN for ${eth_token.symbol} on Avalanche with tx ${renounceAdmin.hash}`)
+                await renounceAdmin.wait()
             } else {
                 console.log(`------ Skipping ${config.AVA_TOKENS[index].symbol} already registered`)
             }
@@ -330,7 +379,6 @@ Bridged tokens Avalanche -> Ethereum:
 ${ethBridgedTokensAddresses.map(token => `${token.symbol}: Avalanche ${token.avaAddress} -> Ethereum ${token.ethAddress} - ResourceId ${token.resourceId} \n`).join('')}
 ================================================================
             `)
-
         }
 
     })
