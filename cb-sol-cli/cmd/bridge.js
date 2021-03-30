@@ -182,7 +182,6 @@ const queryResourceId = new Command("query-resource")
 
 const setupTokens = new Command('setup-tokens')
     .description("Setup multiple tokens to be bridged")
-    .requiredOption('--multiSig <value>', 'Address of Multi-sig')
     .option('--override', 'Skip checking tokens already registered')
     .action(async function(args) {
         const config = require('./setup-tokens-config')
@@ -260,7 +259,7 @@ const setupTokens = new Command('setup-tokens')
                 const PAUSER_ROLE = await avaErc20Instance.PAUSER_ROLE();
                 const DEFAULT_ADMIN_ROLE = await avaErc20Instance.PAUSER_ROLE();
 
-                const grantAdminTx = await avaErc20Instance.grantRole(DEFAULT_ADMIN_ROLE, args.multiSig);
+                const grantAdminTx = await avaErc20Instance.grantRole(DEFAULT_ADMIN_ROLE, config.CBK_MULTISIG);
                 console.log(`------ Granting multisig as Admin for ${eth_token.symbol} on Avalanche with tx ${grantAdminTx.hash}`)
                 await grantAdminTx.wait()
 
@@ -272,7 +271,7 @@ const setupTokens = new Command('setup-tokens')
                 console.log(`------ Revoke deployer as PAUSER for ${eth_token.symbol} on Avalanche with tx ${revokePauserTx.hash}`)
                 await revokePauserTx.wait()
 
-                const grantPauserTx = await avaErc20Instance.grantRole(PAUSER_ROLE, args.multiSig);
+                const grantPauserTx = await avaErc20Instance.grantRole(PAUSER_ROLE, config.CBK_MULTISIG);
                 console.log(`------ Granting multisig as PAUSER for ${eth_token.symbol} on Avalanche with tx ${grantPauserTx.hash}`)
                 await grantPauserTx.wait()
 
@@ -348,7 +347,7 @@ ${avaBridgedTokensAddresses.map(token => `${token.symbol}: Ethereum ${token.ethA
                 const PAUSER_ROLE = await ethErc20Instance.PAUSER_ROLE();
                 const DEFAULT_ADMIN_ROLE = await ethErc20Instance.PAUSER_ROLE();
 
-                const grantAdminTx = await ethErc20Instance.grantRole(DEFAULT_ADMIN_ROLE, args.multiSig);
+                const grantAdminTx = await ethErc20Instance.grantRole(DEFAULT_ADMIN_ROLE, config.CBG_MULTISIG);
                 console.log(`------ Granting multisig as Admin for ${eth_token.symbol} on Avalanche with tx ${grantAdminTx.hash}`)
                 await grantAdminTx.wait()
 
@@ -360,7 +359,7 @@ ${avaBridgedTokensAddresses.map(token => `${token.symbol}: Ethereum ${token.ethA
                 console.log(`------ Revoke deployer as PAUSER for ${eth_token.symbol} on Avalanche with tx ${revokePauserTx.hash}`)
                 await revokePauserTx.wait()
 
-                const grantPauserTx = await ethErc20Instance.grantRole(PAUSER_ROLE, args.multiSig);
+                const grantPauserTx = await ethErc20Instance.grantRole(PAUSER_ROLE, config.CBG_MULTISIG);
                 console.log(`------ Granting multisig as PAUSER for ${eth_token.symbol} on Avalanche with tx ${grantPauserTx.hash}`)
                 await grantPauserTx.wait()
 

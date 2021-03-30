@@ -11,9 +11,11 @@ module.exports = {
 
   CBG_BRIDGE: "",
   CBG_ERC20HANDLER: "",
+  CBG_MULTISIG: "",
 
   CBK_BRIDGE: "",
   CBK_ERC20HANDLER: "",
+  CBK_MULTISIG: "",
 
   ETH_TOKENS: [
     {
