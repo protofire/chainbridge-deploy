@@ -259,23 +259,23 @@ const setupTokens = new Command('setup-tokens')
                 const PAUSER_ROLE = await avaErc20Instance.PAUSER_ROLE();
                 const DEFAULT_ADMIN_ROLE = await avaErc20Instance.DEFAULT_ADMIN_ROLE();
 
-                const grantAdminTx = await avaErc20Instance.grantRole(DEFAULT_ADMIN_ROLE, config.CBK_MULTISIG);
+                const grantAdminTx = await avaErc20Instance.grantRole(DEFAULT_ADMIN_ROLE, config.CBK_MULTISIG, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
                 console.log(`------ Granting multisig as Admin for ${eth_token.symbol} on Avalanche with tx ${grantAdminTx.hash}`)
                 await grantAdminTx.wait()
 
-                const revokeMinterTx = await avaErc20Instance.revokeRole(MINTER_ROLE, ava_wallet.address);
+                const revokeMinterTx = await avaErc20Instance.revokeRole(MINTER_ROLE, ava_wallet.address, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
                 console.log(`------ Revoke deployer as MINTER for ${eth_token.symbol} on Avalanche with tx ${revokeMinterTx.hash}`)
                 await revokeMinterTx.wait()
 
-                const revokePauserTx = await avaErc20Instance.revokeRole(PAUSER_ROLE, ava_wallet.address);
+                const revokePauserTx = await avaErc20Instance.revokeRole(PAUSER_ROLE, ava_wallet.address, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
                 console.log(`------ Revoke deployer as PAUSER for ${eth_token.symbol} on Avalanche with tx ${revokePauserTx.hash}`)
                 await revokePauserTx.wait()
 
-                const grantPauserTx = await avaErc20Instance.grantRole(PAUSER_ROLE, config.CBK_MULTISIG);
+                const grantPauserTx = await avaErc20Instance.grantRole(PAUSER_ROLE, config.CBK_MULTISIG, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
                 console.log(`------ Granting multisig as PAUSER for ${eth_token.symbol} on Avalanche with tx ${grantPauserTx.hash}`)
                 await grantPauserTx.wait()
 
-                const renounceAdmin = await avaErc20Instance.renounceRole(DEFAULT_ADMIN_ROLE, ava_wallet.address);
+                const renounceAdmin = await avaErc20Instance.renounceRole(DEFAULT_ADMIN_ROLE, ava_wallet.address, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
                 console.log(`------ Renounce deployer as ADMIN for ${eth_token.symbol} on Avalanche with tx ${renounceAdmin.hash}`)
                 await renounceAdmin.wait()
 
@@ -347,23 +347,23 @@ ${avaBridgedTokensAddresses.map(token => `${token.symbol}: Ethereum ${token.ethA
                 const PAUSER_ROLE = await ethErc20Instance.PAUSER_ROLE();
                 const DEFAULT_ADMIN_ROLE = await ethErc20Instance.DEFAULT_ADMIN_ROLE();
 
-                const grantAdminTx = await ethErc20Instance.grantRole(DEFAULT_ADMIN_ROLE, config.CBG_MULTISIG);
+                const grantAdminTx = await ethErc20Instance.grantRole(DEFAULT_ADMIN_ROLE, config.CBG_MULTISIG, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
                 console.log(`------ Granting multisig as Admin for ${ava_token.symbol} on Ethereum with tx ${grantAdminTx.hash}`)
                 await grantAdminTx.wait()
 
-                const revokeMinterTx = await ethErc20Instance.revokeRole(MINTER_ROLE, ava_wallet.address);
+                const revokeMinterTx = await ethErc20Instance.revokeRole(MINTER_ROLE, ava_wallet.address, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
                 console.log(`------ Revoke deployer as MINTER for ${ava_token.symbol} on Ethereum with tx ${revokeMinterTx.hash}`)
                 await revokeMinterTx.wait()
 
-                const revokePauserTx = await ethErc20Instance.revokeRole(PAUSER_ROLE, ava_wallet.address);
+                const revokePauserTx = await ethErc20Instance.revokeRole(PAUSER_ROLE, ava_wallet.address, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
                 console.log(`------ Revoke deployer as PAUSER for ${ava_token.symbol} on Ethereum with tx ${revokePauserTx.hash}`)
                 await revokePauserTx.wait()
 
-                const grantPauserTx = await ethErc20Instance.grantRole(PAUSER_ROLE, config.CBG_MULTISIG);
+                const grantPauserTx = await ethErc20Instance.grantRole(PAUSER_ROLE, config.CBG_MULTISIG, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
                 console.log(`------ Granting multisig as PAUSER for ${ava_token.symbol} on Ethereum with tx ${grantPauserTx.hash}`)
                 await grantPauserTx.wait()
 
-                const renounceAdmin = await ethErc20Instance.renounceRole(DEFAULT_ADMIN_ROLE, ava_wallet.address);
+                const renounceAdmin = await ethErc20Instance.renounceRole(DEFAULT_ADMIN_ROLE, ava_wallet.address, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
                 console.log(`------ Renounce deployer as ADMIN for ${ava_token.symbol} on Ethereum with tx ${renounceAdmin.hash}`)
                 await renounceAdmin.wait()
             } else {
@@ -382,6 +382,87 @@ ${ethBridgedTokensAddresses.map(token => `${token.symbol}: Avalanche ${token.ava
 
     })
 
+const configTokensRoles = new Command('config-token-roles')
+    .description("Grants Admin role to multisig, revoke Pauser, Minter and Admin from deployer")
+    .action(async function(args) {
+        const config = require('./tokens-roles-config')
+        const eth_provider = new ethers.providers.JsonRpcProvider(config.CBG_URL);
+        const ava_provider = new ethers.providers.JsonRpcProvider(config.CBK_URL, {
+            name: "custom",
+            chainId: config.AVA_NETWORK_ID
+        });
+
+        const eth_gasPrice = ethers.utils.hexlify(Number(config.ETH_GAS_PRICE))
+        const ava_gasPrice = ethers.utils.hexlify(Number(config.AVA_GAS_PRICE))
+
+        const eth_wallet = new ethers.Wallet(config.CB_PK, eth_provider);
+        const ava_wallet = new ethers.Wallet(config.CB_PK, ava_provider);
+
+        const GAS_LIMIT = ethers.utils.hexlify(8000000)
+
+        console.log('Configuring tokens on Ethereum')
+        for (let index = 0; index < config.ETH_TOKENS.length; index++) {
+            const eth_token = config.ETH_TOKENS[index]
+            console.log(`--- Configuring ${eth_token.symbol}`)
+            const ethErc20Instance = new ethers.Contract(eth_token.address, constants.ContractABIs.Erc20Mintable.abi, eth_wallet);
+
+            const DEFAULT_ADMIN_ROLE = await ethErc20Instance.DEFAULT_ADMIN_ROLE();
+            const MINTER_ROLE = await ethErc20Instance.MINTER_ROLE();
+            const PAUSER_ROLE = await ethErc20Instance.PAUSER_ROLE();
+
+            const grantAdminTx = await ethErc20Instance.grantRole(DEFAULT_ADMIN_ROLE, config.CBG_MULTISIG, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
+            console.log(`------ Granting multisig as Admin for ${eth_token.symbol} on Ethereum with tx ${grantAdminTx.hash}`)
+            await grantAdminTx.wait()
+
+            const revokeMinterTx = await ethErc20Instance.revokeRole(MINTER_ROLE, eth_wallet.address, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
+            console.log(`------ Revoke deployer as MINTER for ${eth_token.symbol} on Ethereum with tx ${revokeMinterTx.hash}`)
+            await revokeMinterTx.wait()
+
+            const revokePauserTx = await ethErc20Instance.revokeRole(PAUSER_ROLE, eth_wallet.address, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
+            console.log(`------ Revoke deployer as PAUSER for ${eth_token.symbol} on Ethereum with tx ${revokePauserTx.hash}`)
+            await revokePauserTx.wait()
+
+            const grantPauserTx = await ethErc20Instance.grantRole(PAUSER_ROLE, config.CBG_MULTISIG, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
+            console.log(`------ Granting multisig as PAUSER for ${eth_token.symbol} on Ethereum with tx ${grantPauserTx.hash}`)
+            await grantPauserTx.wait()
+
+            const renounceAdmin = await ethErc20Instance.renounceRole(DEFAULT_ADMIN_ROLE, eth_wallet.address, { gasPrice: eth_gasPrice, gasLimit: GAS_LIMIT});
+            console.log(`------ Renounce deployer as ADMIN for ${eth_token.symbol} on Ethereum with tx ${renounceAdmin.hash}`)
+            await renounceAdmin.wait()
+        }
+
+        console.log('Configuring tokens on Avalanche')
+        for (let index = 0; index < config.AVA_TOKENS.length; index++) {
+            const ava_token = config.AVA_TOKENS[index]
+            console.log(`--- Configuring ${ava_token.symbol}`)
+            const avaErc20Instance = new ethers.Contract(ava_token.address, constants.ContractABIs.Erc20Mintable.abi, ava_wallet);
+
+            const DEFAULT_ADMIN_ROLE = await avaErc20Instance.DEFAULT_ADMIN_ROLE();
+            const MINTER_ROLE = await avaErc20Instance.MINTER_ROLE();
+            const PAUSER_ROLE = await avaErc20Instance.PAUSER_ROLE();
+
+            const grantAdminTx = await avaErc20Instance.grantRole(DEFAULT_ADMIN_ROLE, config.CBK_MULTISIG, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
+            console.log(`------ Granting multisig as Admin for ${ava_token.symbol} on Avalanche with tx ${grantAdminTx.hash}`)
+            await grantAdminTx.wait()
+
+            const revokeMinterTx = await avaErc20Instance.revokeRole(MINTER_ROLE, ava_wallet.address, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
+            console.log(`------ Revoke deployer as MINTER for ${ava_token.symbol} on Avalanche with tx ${revokeMinterTx.hash}`)
+            await revokeMinterTx.wait()
+
+            const revokePauserTx = await avaErc20Instance.revokeRole(PAUSER_ROLE, ava_wallet.address, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
+            console.log(`------ Revoke deployer as PAUSER for ${ava_token.symbol} on Avalanche with tx ${revokePauserTx.hash}`)
+            await revokePauserTx.wait()
+
+            const grantPauserTx = await avaErc20Instance.grantRole(PAUSER_ROLE, config.CBK_MULTISIG, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
+            console.log(`------ Granting multisig as PAUSER for ${ava_token.symbol} on Avalanche with tx ${grantPauserTx.hash}`)
+            await grantPauserTx.wait()
+
+            const renounceAdmin = await avaErc20Instance.renounceRole(DEFAULT_ADMIN_ROLE, ava_wallet.address, { gasPrice: ava_gasPrice, gasLimit: GAS_LIMIT});
+            console.log(`------ Renounce deployer as ADMIN for ${ava_token.symbol} on Avalanche with tx ${renounceAdmin.hash}`)
+            await renounceAdmin.wait()
+        }
+    })
+
 const bridgeCmd = new Command("bridge")
 
 bridgeCmd.addCommand(registerResourceCmd)
@@ -395,5 +476,6 @@ bridgeCmd.addCommand(safeCancelProposalCmd)
 bridgeCmd.addCommand(queryProposalCmd)
 bridgeCmd.addCommand(queryResourceId)
 bridgeCmd.addCommand(setupTokens)
+bridgeCmd.addCommand(configTokensRoles)
 
 module.exports = bridgeCmd
