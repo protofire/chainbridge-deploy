@@ -1,8 +1,10 @@
+const assert = require('assert')
 const ethers = require('ethers');
 const constants = require('../constants');
 
 const {Command} = require('commander');
-const {setupParentArgs, waitForTx, log, expandDecimals} = require("./utils")
+const {setupParentArgs, safeSetupParentArgs, waitForTx, splitCommaList, log, logSafe, expandDecimals} = require("./utils")
+const SafeToolchain = require('@protofire/gnosis-safe-toolchain')
 
 const mintCmd = new Command("mint")
     .description("Mints erc20 tokens")
@@ -28,6 +30,54 @@ const addMinterCmd = new Command("add-minter")
         log(args, `Adding ${args.minter} as a minter on contract ${args.erc20Address}`);
         const tx = await erc20Instance.grantRole(MINTER_ROLE, args.minter);
         await waitForTx(args.provider, tx.hash)
+    })
+
+const safeAddMinterCmd = new Command("safe-add-minter")
+    .description("Add a new minter to the contract")
+    .option('--erc20Address <address>', 'ERC20 contract address', constants.ERC20_ADDRESS)
+    .option('--minter <address>', 'Minter address', constants.relayerAddresses[1])
+    .requiredOption('--multiSig <value>', 'Address of Multi-sig which has ADMIN role')
+    .option('--approve', 'Approve transaction hash')
+    .option('--execute', 'Execute transaction')
+    .option('--approvers <value>', 'Approvers addresses', splitCommaList)
+    .action(async function(args) {
+        await safeSetupParentArgs(args, args.parent.parent)
+        const erc20Instance = new ethers.Contract(args.erc20Address, constants.ContractABIs.Erc20Mintable.abi, args.wallet);
+        let MINTER_ROLE = await erc20Instance.MINTER_ROLE();
+
+        logSafe(args, `Adding ${args.minter} as a minter on contract ${args.erc20Address}`);
+
+        await safeTransactionAppoveExecute(args, args.erc20Address, constants.ContractABIs.Erc20Mintable.abi, 'grantRole', [MINTER_ROLE, args.minter])
+    })
+
+const safePauseCmd = new Command("safe-pause")
+    .description("Pause ERC20")
+    .option('--erc20Address <address>', 'ERC20 contract address', constants.ERC20_ADDRESS)
+    .requiredOption('--multiSig <value>', 'Address of Multi-sig which has PAUSE role')
+    .option('--approve', 'Approve transaction hash')
+    .option('--execute', 'Execute transaction')
+    .option('--approvers <value>', 'Approvers addresses', splitCommaList)
+    .action(async function(args) {
+        await safeSetupParentArgs(args, args.parent.parent)
+
+        logSafe(args, `Pausing ERC20 contract ${args.erc20Address}`);
+
+        await safeTransactionAppoveExecute(args, args.erc20Address, constants.ContractABIs.Erc20Mintable.abi, 'pause', [])
+    })
+
+const safeUnpauseCmd = new Command("safe-unpause")
+    .description("Unpause ERC20")
+    .option('--erc20Address <address>', 'ERC20 contract address', constants.ERC20_ADDRESS)
+    .requiredOption('--multiSig <value>', 'Address of Multi-sig which has PAUSE role')
+    .option('--approve', 'Approve transaction hash')
+    .option('--execute', 'Execute transaction')
+    .option('--approvers <value>', 'Approvers addresses', splitCommaList)
+    .action(async function(args) {
+        await safeSetupParentArgs(args, args.parent.parent)
+
+        logSafe(args, `Unpausing ERC20 contract ${args.erc20Address}`);
+
+        await safeTransactionAppoveExecute(args, args.erc20Address, constants.ContractABIs.Erc20Mintable.abi, 'unpause', [])
     })
 
 const approveCmd = new Command("approve")
@@ -148,8 +198,42 @@ const proposalDataHashCmd = new Command("data-hash")
 const erc20Cmd = new Command("erc20")
 .option('-d, decimals <number>', "The number of decimal places for the erc20 token", 18)
 
+const safeTransactionAppoveExecute = async (args, contractAddress, contractABI, functionName, params =[]) => {
+    const { safeToolchain, multiSig, approve, provider, execute, approvers } = args
+    const encodedFuntionData = SafeToolchain.util.encodeFunctionData(contractABI, contractAddress, safeToolchain.wallet, functionName, params)
+
+    const { transactionHash, txData} = await safeToolchain.commands.transactionData(multiSig, {
+        to: contractAddress,
+        value: '0',
+        data: encodedFuntionData,
+        operation: SafeToolchain.util.constants.CALL // CALL
+    })
+
+    console.log('transactionHash', transactionHash)
+    console.log('txData', txData)
+
+    // approve transaction
+    if (approve) {
+        const tx = await safeToolchain.commands.approveHash(multiSig, transactionHash)
+        await waitForTx(provider, tx.hash)
+    } else if (execute) {
+        assert(approvers && approvers.length, 'Missing approvers')
+        const tx = await safeToolchain.commands.executeTransaction(
+            multiSig,
+            {
+                ...txData,
+                approvers: approvers
+            }
+        )
+        await waitForTx(provider, tx.hash)
+    }
+}
+
 erc20Cmd.addCommand(mintCmd)
 erc20Cmd.addCommand(addMinterCmd)
+erc20Cmd.addCommand(safeAddMinterCmd)
+erc20Cmd.addCommand(safePauseCmd)
+erc20Cmd.addCommand(safeUnpauseCmd)
 erc20Cmd.addCommand(approveCmd)
 erc20Cmd.addCommand(depositCmd)
 erc20Cmd.addCommand(balanceCmd)
